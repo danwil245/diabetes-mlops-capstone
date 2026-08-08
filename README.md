@@ -1,34 +1,110 @@
-# Diabetes Prediction — MLOps Capstone
+# Diabetes Prediction MLOps Project
 
-An end-to-end MLOps pipeline that predicts diabetes onset from the **Pima Indians
-Diabetes** dataset (a binary classification problem). It ties together the whole
-lifecycle: data versioning → multi-model training → experiment tracking & model
-registry → a prediction API → containerisation → CI.
+An end-to-end MLOps pipeline for **Diabetes Prediction** (Diabetic vs. Not Diabetic) using scikit-learn, MLflow, DVC, FastAPI, Docker, and GitHub Actions. Built on the Pima Indians Diabetes dataset.
+
+## 🏗️ Project Structure
 
 ```
-Dataset (DVC) ──► Train 3 models ──► MLflow (track + registry) ──► best_model.joblib
-                                                                        │
-                                                        FastAPI /predit  ▼
-                                                     Docker image ──► CI (build + test)
+.
+├── data/                        # Dataset (versioned with DVC)
+│   ├── diabetes.csv
+│   └── diabetes.csv.dvc         # DVC pointer (tracked by git)
+├── models/                      # Trained model artifacts (best_model.joblib + metrics)
+├── src/
+│   ├── train.py                 # Trains 3 models + MLflow tracking + registry
+│   ├── app.py                   # FastAPI prediction service
+│   ├── predict.py               # Inference helper (loads the best model)
+│   └── utils.py                 # Data loading & preprocessing utilities
+├── tests/
+│   ├── conftest.py              # Trains a model if none exists (CI safety)
+│   └── test_pipeline.py         # Model + API endpoint tests
+├── .github/
+│   └── workflows/
+│       └── ci.yml               # GitHub Actions CI pipeline
+├── Dockerfile                   # Container image (app + deps + model)
+├── requirements.txt
+├── dvc.yaml                     # DVC pipeline definition
+├── dvc.lock                     # Reproducibility lock file
+├── .gitignore
+└── README.md
 ```
 
-## What it does
+## 🚀 Quick Start
 
-- **Data:** the real 768-row Pima Indians Diabetes CSV, versioned with **DVC**.
-- **Training:** trains **three** classifiers, evaluates each on five metrics,
-  logs everything to **MLflow**, and registers the best one in the MLflow
-  **Model Registry**.
-- **Serving:** a **FastAPI** service exposes `/predict` and `/health`.
-- **Packaging:** a **Dockerfile** builds a self-contained image (code + model).
-- **CI:** **GitHub Actions** installs, trains, runs tests, and builds the image
-  on every push (build + test only — no deployment).
+> Windows note: on this machine use `py -3.13` and a virtual environment, because plain `python` may point to a different install.
 
-## The three models & their results
+### 1. Install dependencies
+```bash
+py -3.13 -m venv .venv
+.\.venv\Scripts\Activate.ps1        # Windows PowerShell
+pip install -r requirements.txt
+```
 
-All three are wrapped in an sklearn `Pipeline` that first turns impossible zeros
-(e.g. a Glucose or BMI of 0 — physiologically impossible, so really "missing")
-into `NaN`, imputes them with the column median, and (for Logistic Regression)
-standard-scales the features. Metrics are on a stratified 20% hold-out test set.
+### 2. Dataset & DVC tracking
+The dataset is already tracked with DVC (`data/diabetes.csv.dvc`). To inspect the versioning:
+```bash
+dvc dag        # shows: data/diabetes.csv.dvc -> train
+dvc status     # "Data and pipelines are up to date."
+```
+
+### 3. Train models
+```bash
+python src/train.py
+```
+This trains **Logistic Regression, Random Forest, and Gradient Boosting** — logs every experiment to MLflow, prints a comparison table, and registers the best model (by ROC-AUC) in the MLflow Model Registry.
+
+### 4. View MLflow experiments
+```bash
+mlflow ui --backend-store-uri sqlite:///mlflow.db
+```
+Open http://localhost:5000 in your browser to compare the three runs and see the registered model.
+
+### 5. Run the FastAPI server
+```bash
+uvicorn src.app:app --host 0.0.0.0 --port 8000 --reload
+```
+Open http://localhost:8000/docs for the interactive Swagger UI.
+
+### 6. Make a prediction
+```bash
+curl -X POST http://localhost:8000/predict \
+  -H "Content-Type: application/json" \
+  -d '{
+    "Pregnancies": 6,
+    "Glucose": 148,
+    "BloodPressure": 72,
+    "SkinThickness": 35,
+    "Insulin": 0,
+    "BMI": 33.6,
+    "DiabetesPedigreeFunction": 0.627,
+    "Age": 50
+  }'
+```
+Response:
+```json
+{ "prediction": 1, "label": "diabetic", "probability": 0.7598 }
+```
+
+### 7. Run tests
+```bash
+pytest tests/ -v
+```
+
+### 8. Build & run Docker
+```bash
+docker build -t diabetes-api .
+docker run -p 8000:8000 diabetes-api
+```
+
+## 📊 Models Trained
+
+| Model | Description | ROC-AUC |
+|-------|-------------|:-------:|
+| Logistic Regression | Baseline linear classifier (standard-scaled) | 0.813 |
+| Random Forest | Ensemble of 300 decision trees (max_depth=6) | 0.808 |
+| **Gradient Boosting** ⭐ | Boosted ensemble (200 estimators, lr=0.05) | **0.831** |
+
+Full metrics on a stratified 20% hold-out test set:
 
 | Model | Accuracy | Precision | Recall | F1 | ROC-AUC |
 |-------|:--------:|:---------:|:------:|:--:|:-------:|
@@ -36,135 +112,61 @@ standard-scales the features. Metrics are on a stratified 20% hold-out test set.
 | LogisticRegression | 0.708 | 0.600 | 0.500 | 0.545 | 0.813 |
 | RandomForest | 0.734 | 0.651 | 0.519 | 0.577 | 0.808 |
 
-**Best model = Gradient Boosting** (selected by highest ROC-AUC). It's registered
-in MLflow as `diabetes-classifier` with the alias **`production`**, and saved to
-`models/best_model.joblib` for the API to serve.
+The best-performing model (by ROC-AUC) is automatically registered in the MLflow Model Registry as **`diabetes-classifier`** and marked with the **`production`** alias. All three models bake preprocessing into an sklearn `Pipeline`: impossible zeros (e.g. a Glucose or BMI of 0) are treated as missing, median-imputed, and — for Logistic Regression — standard-scaled.
 
-### Why these choices (plain-English notes)
+## 🔌 API Endpoints
 
-- **Why ROC-AUC to pick the winner?** In a medical screen the two classes are
-  imbalanced (~35% diabetic) and the decision threshold matters. ROC-AUC measures
-  how well the model *ranks* diabetics above non-diabetics across all thresholds,
-  so it's a more honest single-number comparison than raw accuracy.
-- **The five metrics:** *accuracy* = overall % correct; *precision* = of those
-  flagged diabetic, how many really are; *recall* = of the true diabetics, how
-  many we caught; *F1* = balance of precision & recall; *ROC-AUC* = ranking
-  quality (1.0 perfect, 0.5 = coin flip).
-- **Why Gradient Boosting over XGBoost?** `GradientBoostingClassifier` is pure
-  scikit-learn — no extra native library — so it Dockerises cleanly. XGBoost
-  would work too but adds a dependency for no real gain on a dataset this small.
-- **How the API loads the model:** it loads the plain `models/best_model.joblib`
-  file, *not* the MLflow registry. Registry loading needs the `mlflow.db` +
-  artifact store to travel with the app; a single joblib file makes the Docker
-  image fully self-contained. The registry still records provenance (which run,
-  which metrics) for tracking — the two roles are complementary.
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/health` | Health check + which model is loaded |
+| POST | `/predict` | Single prediction (returns class, label, probability) |
+| GET | `/docs` | Swagger UI |
+| GET | `/redoc` | ReDoc UI |
 
-## Project layout
+## 🔄 CI/CD Pipeline (GitHub Actions)
 
-```
-diabetes-mlops-capstone/
-├── data/diabetes.csv          # tracked by DVC (see data/diabetes.csv.dvc)
-├── models/                    # best_model.joblib + metrics + metadata (built)
-├── src/
-│   ├── utils.py               # schema + shared preprocessing (zero→NaN→impute)
-│   ├── train.py               # trains 3 models, MLflow logging + registry
-│   ├── predict.py             # load model + predict() helper
-│   └── app.py                 # FastAPI: /predict, /health
-├── tests/                     # pytest sanity checks
-├── .github/workflows/ci.yml   # GitHub Actions: install → train → test → docker
-├── Dockerfile
-├── dvc.yaml / dvc.lock        # DVC pipeline (train stage)
-├── requirements.txt
-└── README.md
-```
+The workflow in `.github/workflows/ci.yml` runs on every push/PR:
 
-## Setup
+1. **Checkout** the repository
+2. **Set up Python** 3.13
+3. **Install** dependencies
+4. **Train** the models (produces the model artifact)
+5. **Run** `pytest tests/`
+6. **Build** the Docker image and smoke-test `/health` in the container
 
-Python 3.13. On this machine use the `py -3.13` launcher (plain `python` may
-resolve to a different install).
+Build + test only — no deployment step.
 
-```powershell
-py -3.13 -m venv .venv
-.\.venv\Scripts\Activate.ps1          # activate (so `python` = the venv)
-pip install -r requirements.txt
-```
+## 📋 Dataset
 
-## Run training
+**Pima Indians Diabetes Dataset**:
 
-```powershell
-python src/train.py
-```
+- 768 samples, 8 numerical features
+- Binary classification: `0` = Not Diabetic, `1` = Diabetic (`Outcome` column)
+- Features: Pregnancies, Glucose, BloodPressure, SkinThickness, Insulin, BMI, DiabetesPedigreeFunction, Age
+- Versioned with DVC
 
-This trains all three models, prints the comparison table, logs runs to MLflow
-(local `mlflow.db`), registers the best model, and writes
-`models/best_model.joblib` + `models/model_metadata.json`.
+## 🛠️ Technology Stack
 
-### Compare the runs in the MLflow UI
+| Component | Technology |
+|-----------|------------|
+| Language | Python 3.13 |
+| ML | scikit-learn |
+| Experiment Tracking | MLflow (SQLite backend) |
+| API | FastAPI + Uvicorn |
+| Data Versioning | DVC |
+| Containerization | Docker |
+| CI/CD | GitHub Actions |
+| Testing | pytest |
 
-```powershell
-mlflow ui --backend-store-uri sqlite:///mlflow.db
-```
+## 📸 Project Screenshots
 
-Open <http://127.0.0.1:5000> → experiment **diabetes-classification** to compare
-the three runs side by side, and see the registered model under **Models**.
+Place your screenshots in a `screenshots/` folder and they'll render below.
 
-## Run the API
-
-```powershell
-uvicorn src.app:app --reload
-```
-
-- Interactive docs: <http://127.0.0.1:8000/docs>
-- Health: `GET http://127.0.0.1:8000/health`
-- Predict:
-
-```powershell
-curl -X POST http://127.0.0.1:8000/predict `
-  -H "Content-Type: application/json" `
-  -d '{"Pregnancies":6,"Glucose":148,"BloodPressure":72,"SkinThickness":35,"Insulin":0,"BMI":33.6,"DiabetesPedigreeFunction":0.627,"Age":50}'
-# -> {"prediction":1,"label":"diabetic","probability":0.7598}
-```
-
-## Run in Docker
-
-```powershell
-docker build -t diabetes-mlops-capstone:local .
-docker run -d -p 8000:8000 --name diabetes-api diabetes-mlops-capstone:local
-# test it, then:
-docker rm -f diabetes-api
-```
-
-The image bundles the code **and** the trained model, so the container is fully
-self-contained — no training or external files needed at runtime.
-
-## DVC (data versioning)
-
-DVC was initialised in `--subdir` mode (this folder lives inside the parent
-`devops` git repo). The dataset is tracked by its content hash:
-
-```powershell
-dvc dag        # shows: data/diabetes.csv.dvc ──► train
-dvc status     # "Data and pipelines are up to date."
-dvc repro      # re-runs the train stage only if inputs changed
-```
-
-Git tracks the **pointers** (`data/diabetes.csv.dvc`, `dvc.lock`) while
-`data/.gitignore` and `models/.gitignore` keep the large CSV and model binaries
-out of git. To share the actual data later, add a DVC remote and `dvc push`.
-
-## Tests
-
-```powershell
-pytest tests/ -v
-```
-
-Checks that the model loads, `predict()` returns a valid shape, `/health` is ok,
-`/predict` returns a valid prediction, and bad input is rejected with a 422. If
-no model exists yet, the test fixture trains one first.
-
-## CI (GitHub Actions)
-
-`.github/workflows/ci.yml` runs on every push/PR: checkout → set up Python 3.13
-→ install deps → **train** (produces the model) → **pytest** → **docker build**
-→ smoke-test `/health` in the container. It's build-and-test only — there is no
-deployment step.
+| Screenshot | Demonstrates |
+|-----------|--------------|
+| ![MLflow experiments](screenshots/mlflow-experiments.png) | The three tracked training runs |
+| ![Run comparison](screenshots/mlflow-compare.png) | Comparing all three experiments |
+| ![Registered model](screenshots/registered-model.png) | `diabetes-classifier` v1 in the Model Registry |
+| ![DVC tracking](screenshots/dvc-tracking.png) | `dvc dag` + `dvc status` |
+| ![FastAPI prediction](screenshots/fastapi-predict.png) | `POST /predict` returning a prediction |
+| ![GitHub Actions](screenshots/github-actions.png) | Successful CI pipeline run |
