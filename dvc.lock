@@ -1,0 +1,30 @@
+schema: '2.0'
+stages:
+  train:
+    cmd: python src/train.py
+    deps:
+    - path: data/diabetes.csv
+      hash: md5
+      md5: f2906818eda8fcfc8f8416557ab1e6df
+      size: 23873
+    - path: src/train.py
+      hash: md5
+      md5: 87dd576d3e226d1fc68ed3149c293cff
+      size: 8755
+    - path: src/utils.py
+      hash: md5
+      md5: f10e4645ff9bd53cf8dd49761ef10d66
+      size: 2450
+    outs:
+    - path: models/best_model.joblib
+      hash: md5
+      md5: 61f077b37b3b40af927563b397ce46cd
+      size: 270689
+    - path: models/metrics_comparison.csv
+      hash: md5
+      md5: 086953bdf773ce7a97081dbc46078a75
+      size: 337
+    - path: models/model_metadata.json
+      hash: md5
+      md5: e96fcbd68db1ceaa39687035296de60e
+      size: 498

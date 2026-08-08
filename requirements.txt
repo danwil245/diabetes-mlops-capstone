@@ -1,0 +1,13 @@
+# Exact pins (Python 3.13). These are what the Docker image installs too, so a
+# model trained locally loads cleanly in the container -- scikit-learn does not
+# guarantee unpickling across versions. Regenerate with: pip freeze.
+numpy==2.5.1
+pandas==2.3.3
+scikit-learn==1.9.0
+mlflow==3.15.1
+fastapi==0.141.1
+uvicorn[standard]==0.52.1
+pydantic==2.13.4
+joblib==1.5.3
+pytest==9.1.1
+httpx==0.28.1
