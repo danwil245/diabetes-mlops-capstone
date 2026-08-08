@@ -160,13 +160,32 @@ Build + test only — no deployment step.
 
 ## 📸 Project Screenshots
 
-Place your screenshots in a `screenshots/` folder and they'll render below.
+### 1. MLflow Experiment Tracking — Three Training Runs
+The three models (Logistic Regression, Random Forest, Gradient Boosting) logged as separate runs in the `diabetes-classification` experiment.
 
-| Screenshot | Demonstrates |
-|-----------|--------------|
-| ![MLflow experiments](screenshots/mlflow-experiments.png) | The three tracked training runs |
-| ![Run comparison](screenshots/mlflow-compare.png) | Comparing all three experiments |
-| ![Registered model](screenshots/registered-model.png) | `diabetes-classifier` v1 in the Model Registry |
-| ![DVC tracking](screenshots/dvc-tracking.png) | `dvc dag` + `dvc status` |
-| ![FastAPI prediction](screenshots/fastapi-predict.png) | `POST /predict` returning a prediction |
-| ![GitHub Actions](screenshots/github-actions.png) | Successful CI pipeline run |
+![MLflow experiments](screenshots/mlflow-experiments.png)
+
+### 2. MLflow Run Comparison
+Comparing all three experiments side by side across parameters and metrics.
+
+![Run comparison](screenshots/mlflow-compare.png)
+
+### 3. MLflow Model Registry — Registered Best Model
+The best model registered as `diabetes-classifier` (version 1) with the `production` alias.
+
+![Registered model](screenshots/registered-model.png)
+
+### 4. DVC Data Versioning
+`dvc dag` showing the pipeline and `dvc status` confirming data and pipelines are up to date.
+
+![DVC tracking](screenshots/dvc-tracking.png)
+
+### 5. FastAPI Prediction Endpoint
+`POST /predict` returning a prediction with class, label, and probability.
+
+![FastAPI prediction](screenshots/fastapi-predict.png)
+
+### 6. GitHub Actions CI Pipeline
+A successful CI run (build → test → Docker build) on push to `main`.
+
+![GitHub Actions](screenshots/github-actions.png)
